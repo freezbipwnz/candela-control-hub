@@ -1,9 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Review, UserRole } from '../types/crm';
 import { INITIAL_REVIEWS } from '../data/mockData';
 import {
   Star,
-  Check,
   CheckCircle2,
   Clock,
   XCircle,
@@ -21,10 +20,16 @@ import {
   Trash2,
   Edit3,
   ExternalLink,
-  SlidersHorizontal,
   ChevronDown,
-  Info
+  Check
 } from 'lucide-react';
+
+export interface ReviewsScreenProps {
+  reviews?: Review[];
+  onUpdateStatus?: (reviewId: string, newStatus: 'published' | 'rejected') => void;
+  onBrandReply?: (reviewId: string, replyText: string) => void;
+  currentRole?: UserRole;
+}
 
 // Predefined luxury response templates
 const REPLY_TEMPLATES = [
@@ -42,20 +47,24 @@ const REPLY_TEMPLATES = [
   },
 ];
 
-export interface ReviewsScreenProps {
-  reviews?: Review[];
-  onUpdateStatus?: (reviewId: string, newStatus: 'published' | 'rejected') => void;
-  onBrandReply?: (reviewId: string, replyText: string) => void;
-  currentRole?: UserRole;
-}
-
 export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
-  reviews: propReviews,
-  onUpdateStatus: propOnUpdateStatus,
-  onBrandReply: propOnBrandReply,
-  currentRole = 'OWNER'
+  reviews: initialReviewsProp,
+  onUpdateStatus,
+  onBrandReply,
+  currentRole = 'OWNER',
 }) => {
-  const [reviews, setReviews] = useState<Review[]>(propReviews || INITIAL_REVIEWS);
+  const [localReviews, setLocalReviews] = useState<Review[]>(
+    initialReviewsProp || INITIAL_REVIEWS
+  );
+
+  useEffect(() => {
+    if (initialReviewsProp) {
+      setLocalReviews(initialReviewsProp);
+    }
+  }, [initialReviewsProp]);
+
+  const reviews = initialReviewsProp || localReviews;
+
   const [activeTab, setActiveTab] = useState<'all' | 'published' | 'pending' | 'rejected'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [ratingFilter, setRatingFilter] = useState<number | 'all'>('all');
@@ -110,14 +119,18 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
 
   // --- Moderation Handlers ---
   const handleUpdateStatus = (id: string, newStatus: 'published' | 'rejected' | 'pending') => {
-    setReviews((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
-    );
+    if (onUpdateStatus && (newStatus === 'published' || newStatus === 'rejected')) {
+      onUpdateStatus(id, newStatus);
+    } else {
+      setLocalReviews((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
+      );
+    }
   };
 
   const handleDeleteReview = (id: string) => {
     if (confirm('Вы уверены, что хотите безвозвратно удалить этот отзыв?')) {
-      setReviews((prev) => prev.filter((r) => r.id !== id));
+      setLocalReviews((prev) => prev.filter((r) => r.id !== id));
     }
   };
 
@@ -133,28 +146,31 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
     e.preventDefault();
     if (!selectedReviewForReply || !replyText.trim()) return;
 
-    const now = new Date();
-    const formattedDate = `${now.toISOString().slice(0, 10)} ${now.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })}`;
+    if (onBrandReply) {
+      onBrandReply(selectedReviewForReply.id, replyText.trim());
+    } else {
+      const now = new Date();
+      const formattedDate = `${now.toISOString().slice(0, 10)} ${now.toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
 
-    setReviews((prev) =>
-      prev.map((r) =>
-        r.id === selectedReviewForReply.id
-          ? {
-              ...r,
-              // If review was pending, auto-publish it when brand replies
-              status: r.status === 'pending' ? 'published' : r.status,
-              brandReply: {
-                text: replyText.trim(),
-                authorName: replyAuthor,
-                repliedAt: formattedDate,
-              },
-            }
-          : r
-      )
-    );
+      setLocalReviews((prev) =>
+        prev.map((r) =>
+          r.id === selectedReviewForReply.id
+            ? {
+                ...r,
+                status: r.status === 'pending' ? 'published' : r.status,
+                brandReply: {
+                  text: replyText.trim(),
+                  authorName: replyAuthor,
+                  repliedAt: formattedDate,
+                },
+              }
+            : r
+        )
+      );
+    }
 
     setSelectedReviewForReply(null);
     setReplyText('');
@@ -163,7 +179,7 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
   // --- Delete Brand Reply ---
   const handleDeleteBrandReply = (reviewId: string) => {
     if (confirm('Удалить официальный ответ бренда на этот отзыв?')) {
-      setReviews((prev) =>
+      setLocalReviews((prev) =>
         prev.map((r) => (r.id === reviewId ? { ...r, brandReply: undefined } : r))
       );
     }
@@ -177,6 +193,9 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
           <div className="flex items-center gap-2 mb-1">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-wide uppercase bg-brand-terracotta/10 text-brand-terracotta dark:bg-brand-terracotta-dark/15 dark:text-brand-terracotta-dark">
               <Star className="w-3.5 h-3.5 fill-current" /> Отзывы & Репутация
+            </span>
+            <span className="text-xs text-[#78716C] dark:text-[#A8A29E]">
+              Роль: {currentRole}
             </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-serif font-cormorant font-semibold tracking-tight text-[#1C1917] dark:text-[#FBF9F5]">
@@ -501,7 +520,7 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
                     </div>
                   )}
 
-                  {/* Olfactory / Product Specific Attributes */}
+                  {/* Olfactory / Attributes */}
                   {review.attributes && (
                     <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-[#78716C] dark:text-[#A8A29E]">
                       {review.attributes.longevity && (
@@ -519,7 +538,7 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
                     </div>
                   )}
 
-                  {/* Buyer Photos Gallery */}
+                  {/* Attached Buyer Photos */}
                   {review.photos && review.photos.length > 0 && (
                     <div className="space-y-1.5 pt-2">
                       <span className="text-[11px] uppercase tracking-wider text-[#78716C] dark:text-[#A8A29E] font-medium">
@@ -551,7 +570,6 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
                 {/* BRAND REPLY SECTION */}
                 <div className="pt-3 border-t border-atelier-border/60 dark:border-atelier-dark-border/60">
                   {review.brandReply ? (
-                    // Display existing brand reply
                     <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50/70 via-stone-50/50 to-transparent dark:from-amber-950/20 dark:via-stone-900/40 dark:to-transparent border border-amber-400/30 dark:border-amber-500/20 space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -589,7 +607,6 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
                       </p>
                     </div>
                   ) : (
-                    // No reply yet button
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-[#78716C] dark:text-[#A8A29E] flex items-center gap-1.5">
                         <CornerDownRight className="w-3.5 h-3.5 text-brand-terracotta" />
@@ -615,7 +632,6 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
       {selectedReviewForReply && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
           <div className="bg-atelier-card dark:bg-atelier-dark-card border border-atelier-border dark:border-atelier-dark-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-scaleUp">
-            {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b border-atelier-border dark:border-atelier-dark-border">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600">
@@ -638,9 +654,7 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
               </button>
             </div>
 
-            {/* Modal Body */}
             <form onSubmit={handleSubmitBrandReply} className="p-6 space-y-5">
-              {/* Context: Snippet of Customer's Review */}
               <div className="p-3.5 rounded-xl bg-atelier-surface dark:bg-atelier-dark-surface border border-atelier-border dark:border-atelier-dark-border text-xs space-y-1">
                 <div className="flex items-center justify-between font-semibold text-[#78716C] dark:text-[#A8A29E]">
                   <span>Отзыв покупателя ({selectedReviewForReply.rating} ★):</span>
@@ -712,7 +726,7 @@ export const ReviewsScreen: React.FC<ReviewsScreenProps> = ({
                 />
               </div>
 
-              {/* Live Preview of Response */}
+              {/* Live Preview */}
               {replyText.trim() && (
                 <div className="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-400/30 text-xs space-y-1">
                   <div className="flex items-center gap-1.5 font-serif font-cormorant font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
